@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View, Dimensions, TouchableOpacity, PanResponder } from 'react-native'
+import { StyleSheet, Text, View, Dimensions, TouchableOpacity, PanResponder, AppState, AppStateStatus } from 'react-native'
 import React, { useRef, useEffect, useState } from 'react'
 import { VideoView, useVideoPlayer } from 'expo-video'
 
@@ -15,12 +15,40 @@ const VideoWrapper: React.FC<VideoWrapperProps> = ({ data, isActive, index }) =>
     const [isPausedByLongPress, setIsPausedByLongPress] = useState(false)
     const videoRef = useRef(null)
     const longPressTimer = useRef<NodeJS.Timeout | null>(null)
-
+    const appState = useRef(AppState.currentState)
+    const [wasPlayingBeforeBackground, setWasPlayingBeforeBackground] = useState(false)
     const player = useVideoPlayer(data.uri || data.url, (player) => {
         player.loop = true
         player.muted = false
     })
 
+    // Handle app state changes
+    useEffect(() => {
+        const handleAppStateChange = (nextAppState: AppStateStatus) => {
+            if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+                // App has come to the foreground
+                if (isActive && wasPlayingBeforeBackground) {
+                    // Resume video if it was playing before going to background
+                    player.play()
+                    setIsPlaying(true)
+                }
+            } else if (appState.current === 'active' && nextAppState.match(/inactive|background/)) {
+                // App is going to the background
+                if (isActive && isPlaying) {
+                    setWasPlayingBeforeBackground(true)
+                } else {
+                    setWasPlayingBeforeBackground(false)
+                }
+            }
+            appState.current = nextAppState
+        }
+
+        const subscription = AppState.addEventListener('change', handleAppStateChange)
+
+        return () => {
+            subscription?.remove()
+        }
+    }, [isActive, isPlaying, wasPlayingBeforeBackground, player])
     useEffect(() => {
         if (isActive) {
             // Reset video to beginning when it becomes active
